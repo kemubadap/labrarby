@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "labrarby"
+version = "0.1.0"
+description = "Modular scientific data analysis, fitting and plotting library"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"} 
+authors = [
+    {name = "Kemubadap"}
+]
+keywords = ["data-analysis", "physics", "fitting", "plotting"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+dependencies = [
+    "numpy>=1.20",
+    "matplotlib>=3.4",
+    "scipy>=1.7",
+    "sympy>=1.9",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["labrarby*"]
+
+[project.urls]
+"Homepage" = "https://github.com/kemubadap/labrarby"

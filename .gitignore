@@ -1,0 +1,15 @@
+# virtual environment and environment files
+venv/
+env/
+.env
+
+# temporary files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# example data files
+*.txt
+*.csv
+*.dat
+*.png
