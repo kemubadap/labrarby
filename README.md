@@ -1,4 +1,17 @@
-This project is a python library made for simple data analysis and visualization. It provides functions for fitting data to various models, plotting the results, and performing basic statistical analysis. The library is designed to be easy to use and flexible, allowing users to customize their analyses and visualizations as needed.
+Labrarby
 
-Please note that this library is merely a side project of two physics students and is not intended for commercial use. It is meant to be a tool for learning and experimentation, and may not be suitable for all types of data analysis or visualization tasks, particularly those that require more advanced features or performance. Users should be aware of the limitations of the library and use it accordingly.
+A flexible, easy-to-use Python library for straightforward data analysis, mathematical modeling, and visualization.
 
+--- OVERVIEW ---
+This library provides a streamlined toolkit for fitting data to various models, plotting the results, and performing basic statistical analyses. It is designed with simplicity and flexibility in mind, allowing users to easily customize their workflows and visualizations without wrestling with overly complex syntax.
+
+--- KEY FEATURES ---
+* Curve Fitting: Easily fit experimental data to custom mathematical models.
+* Visualization: Generate clear, customizable plots to interpret your results.
+* Statistical Analysis: Perform essential statistical evaluations.
+* Modular Design: Built to be flexible - use only the tools you need for your specific task.
+
+--- DISCLAIMER ---
+Please note: This library is a passion project created by two physics students. It is intended primarily as a tool for learning, experimentation, and everyday laboratory data processing. 
+
+It is not intended for commercial use, nor is it suited for tasks requiring enterprise-level performance or highly advanced data science features. Users should be aware of these limitations. 
