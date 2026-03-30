@@ -111,15 +111,19 @@ class FittingMixin:
 
         return popt, sqrt_diag, R
 
-    def naive_linear_fit(self, x_col, y_col, xsigma_col, ysigma_col, naive_b=False):
+    def naive_linear_fit(self, x_col, y_col, xsigma_col, ysigma_col, naive_b=False, lambda_penalty=1.0):
         """
-        Fits extreme lines to data using a naive method based on uncertainty rectangles.
+        Fits extreme lines to data using a soft-margin algorithm based on uncertainty rectangles.
+        First, calculates the best fit using weighted least squares. Then, evaluates geometrically 
+        possible extreme lines, penalizing them for missing the uncertainty bounds of the points.
         
         Args:
             x_col, y_col (int): Data column numbers (1-indexed).
             xsigma_col, ysigma_col (int): Uncertainty column numbers (1-indexed).
-            naive_b (bool, optional): If True, the averaged b is calculated only based 
-                                      on the two extreme points. Defaults to False.
+            naive_b (bool, optional): If True, b_avg is calculated as average of b_max and b_min. 
+                                      Defaults to False (uses best fit b).
+            lambda_penalty (float, optional): Weight of the penalty for missing error bars. 
+                                              Higher = stricter fit. Defaults to 1.0.
           
         Returns:
             list: Three 2-element lists: [[a_max, b_max], [a_min, b_min], [a_avg, b_avg]]
@@ -135,61 +139,88 @@ class FittingMixin:
         except IndexError:
             raise IndexError("Invalid column indices provided.")
 
-        idx_min = np.argmin(x)
-        idx_max = np.argmax(x)
+        if len(x) < 2:
+            raise ValueError("At least two data points are required.")
 
-        if idx_min == idx_max:
-            raise ValueError("Extreme points are identical (no span on the X-axis).")
+        # KROK 1: Prosta najlepszego dopasowania (Best Fit)
+        def linear_model(x_val, a_val, b_val):
+            return a_val * x_val + b_val
 
-        x1, y1, dx1, dy1 = x[idx_min], y[idx_min], dx[idx_min], dy[idx_min]
-        x2, y2, dx2, dy2 = x[idx_max], y[idx_max], dx[idx_max], dy[idx_max]
+        try:
+            if np.all(dy > 0):
+                popt, _ = curve_fit(linear_model, x, y, sigma=dy, absolute_sigma=True)
+            else:
+                popt, _ = curve_fit(linear_model, x, y)
+            a_avg, b_avg = popt
+        except Exception as e:
+            raise RuntimeError(f"Error calculating best fit: {e}")
 
-        corners1 = [
-            (x1 + dx1, y1 + dy1), (x1 + dx1, y1 - dy1),
-            (x1 - dx1, y1 + dy1), (x1 - dx1, y1 - dy1)
-        ]
-        corners2 = [
-            (x2 + dx2, y2 + dy2), (x2 + dx2, y2 - dy2),
-            (x2 - dx2, y2 + dy2), (x2 - dx2, y2 - dy2)
-        ]
+        # KROK 2: Generowanie potencjalnych prostych skrajnych
+        corners = []
+        for xi, yi, dxi, dyi in zip(x, y, dx, dy):
+            # 4 rogi dla każdego punktu pomiarowego
+            corners.append([
+                (xi + dxi, yi + dyi), (xi + dxi, yi - dyi),
+                (xi - dxi, yi + dyi), (xi - dxi, yi - dyi)
+            ])
 
-        a_max, b_max = -np.inf, 0
-        a_min, b_min = np.inf, 0
+        candidates = []
+        # Przechodzimy przez każdą unikalną parę punktów
+        for i in range(len(x)):
+            for j in range(i + 1, len(x)):
+                for cx1, cy1 in corners[i]:
+                    for cx2, cy2 in corners[j]:
+                        if cx1 == cx2:
+                            continue # Pomijamy pionowe proste
+                        a = (cy2 - cy1) / (cx2 - cx1)
+                        b = cy1 - a * cx1
+                        candidates.append((a, b))
 
-        for cx1, cy1 in corners1:
-            for cx2, cy2 in corners2:
-                if cx1 == cx2:
-                    continue
-                
-                a = (cy2 - cy1) / (cx2 - cx1)
-                b = cy1 - a * cx1
-                
-                if a > a_max:
-                    a_max = a
-                    b_max = b
-                if a < a_min:
-                    a_min = a
-                    b_min = b
+        if not candidates:
+            raise ValueError("Could not generate any valid extreme line candidates.")
 
-        a_avg = (a_max + a_min) / 2.0
+        candidates = np.array(candidates)
+        a_vals = candidates[:, 0]
+        b_vals = candidates[:, 1]
 
+        # KROK 3: Płynna miara odległości i Funkcja Kary (Soft-Margin)
+        # Zabezpieczenie przed dzieleniem przez zero
+        dy_safe = np.maximum(dy, 1e-10)
+        dx_safe = np.maximum(dx, 1e-10)
+
+        penalties = np.zeros(len(candidates))
+        
+        for idx, (a, b) in enumerate(candidates):
+            # Odległość każdego punktu od prostej w jednostkach (efektywnej) sigmy
+            effective_sigma = np.sqrt(dy_safe**2 + (a * dx_safe)**2)
+            distances = np.abs(y - (a * x + b)) / effective_sigma
+            
+            # Kara tylko za przekroczenie marginesu (distance > 1)
+            misses = np.maximum(0, distances - 1)
+            penalties[idx] = np.sum(misses**2)
+
+        # KROK 4: Znormalizowana funkcja celu
+        # Normalizujemy a i kary do przedziału [0, 1], aby lambda_penalty miało stały sens
+        a_ptp = np.ptp(a_vals) if np.ptp(a_vals) > 0 else 1.0
+        a_norm = (a_vals - np.min(a_vals)) / a_ptp
+
+        p_ptp = np.ptp(penalties) if np.ptp(penalties) > 0 else 1.0
+        p_norm = (penalties - np.min(penalties)) / p_ptp
+
+        # Poszukiwanie a_max (maksymalizujemy znormalizowane a, minimalizujemy karę)
+        score_max = a_norm - lambda_penalty * p_norm
+        best_max_idx = np.argmax(score_max)
+        a_max, b_max = candidates[best_max_idx]
+
+        # Poszukiwanie a_min (minimalizujemy znormalizowane a, minimalizujemy karę)
+        # Czym mniejsze a, tym większe -a_norm
+        score_min = -a_norm - lambda_penalty * p_norm
+        best_min_idx = np.argmax(score_min)
+        a_min, b_min = candidates[best_min_idx]
+
+        # KROK 5: Wsteczna kompatybilność dla b
         if naive_b:
-            b1 = y1 - a_avg * x1
-            b2 = y2 - a_avg * x2
-            b_avg = (b1 + b2) / 2.0
-        else:
-            def model_fixed_a(x_val, b_val):
-                return a_avg * x_val + b_val
-
-            try:
-                if np.all(dy > 0):
-                    popt, _ = curve_fit(model_fixed_a, x, y, sigma=dy, absolute_sigma=True)
-                else:
-                    popt, _ = curve_fit(model_fixed_a, x, y)
-                    
-                b_avg = popt[0]
-            except Exception as e:
-                raise RuntimeError(f"Error fitting averaged b: {e}")
+            b_avg = (b_max + b_min) / 2.0
 
         return [[a_max, b_max], [a_min, b_min], [a_avg, b_avg]]
 
