@@ -10,9 +10,19 @@ class PlottingMixin:
     Expects self.data to be a numpy array.
     """
 
-    def plot_data(self, cols, meta=None, functions=None, function_params=None, do_legend=True, multiple_x_axis=False, uncertainties_columns=None):
+    def plot_data(self, cols, meta=None, functions=None, function_params=None, do_legend=True, multiple_x_axis=False, uncertainties_columns=None, fontsize=None):
         """
         Plots the data and optionally overlays mathematical models.
+        
+        Args:
+            cols (list or dict): Data columns to plot.
+            meta (tuple, optional): (filename, title, xlabel, ylabel).
+            functions (list of str, optional): Math function strings to overlay.
+            function_params (list of dict, optional): Parameters for the functions.
+            do_legend (bool, optional): Whether to display the legend.
+            multiple_x_axis (bool, optional): Treat cols as {x_col: y_col} mapping.
+            uncertainties_columns (dict, optional): Mapping for error bars.
+            fontsize (int, optional): Base font size for all plot elements.
         """
         if not isinstance(self.data, np.ndarray):
             raise TypeError("self.data must be a numpy array.")
@@ -71,45 +81,58 @@ class PlottingMixin:
             filename, title, xlabel, ylabel = meta
         else:
             filename, title, xlabel, ylabel = None, "Plot", "X Axis", "Y Axis"
+
+        # Konfiguracja relatywnych rozmiarów czcionek
+        rc_params = {}
+        if fontsize is not None:
+            rc_params = {
+                'font.size': fontsize,
+                'axes.titlesize': fontsize + 2,    # Tytuł odrobinę większy
+                'axes.labelsize': fontsize,        # Etykiety osi w rozmiarze bazowym
+                'xtick.labelsize': fontsize - 1,   # Podziałki minimalnie mniejsze
+                'ytick.labelsize': fontsize - 1,
+                'legend.fontsize': fontsize - 1    # Legenda minimalnie mniejsza
+            }
+
+        # Używamy menedżera kontekstu, by nie nadpisać globalnych ustawień matplotlib
+        with plt.rc_context(rc_params):
+            plt.figure(figsize=(8, 6))
             
-        plt.figure(figsize=(8, 6))
-        
-        for i in range(len(ys)):
-            label = f"Series {i+1}"
-            if x_errs[i] is not None or y_errs[i] is not None:
-                plt.errorbar(xs[i], ys[i], xerr=x_errs[i], yerr=y_errs[i], fmt='.', label=label, capsize=3)
+            for i in range(len(ys)):
+                label = f"Series {i+1}"
+                if x_errs[i] is not None or y_errs[i] is not None:
+                    plt.errorbar(xs[i], ys[i], xerr=x_errs[i], yerr=y_errs[i], fmt='.', label=label, capsize=3)
+                else:
+                    plt.scatter(xs[i], ys[i], label=label, marker='.')
+
+            if functions and xs:
+                min_x = min(np.min(x_arr) for x_arr in xs)
+                max_x = max(np.max(x_arr) for x_arr in xs)
+                x_range = np.linspace(min_x, max_x, 1000)
+                
+                for i, func in enumerate(functions):
+                    param_names = function_params[i].keys() if function_params and i < len(function_params) else []
+                    param_values = list(function_params[i].values()) if function_params and i < len(function_params) else []
+                    
+                    model_func = create_model_function(func, param_names)
+                    
+                    y_model = np.array([model_func(x, *param_values) for x in x_range])
+                    plt.plot(x_range, y_model, label=f"Model {i+1}", linestyle='-')
+
+            plt.title(title)
+            plt.xlabel(xlabel)
+            plt.ylabel(ylabel)
+            if do_legend:
+                plt.legend()
+            plt.grid()
+            
+            if filename:
+                plt.savefig(filename, format='png')
+                plt.close()
             else:
-                plt.scatter(xs[i], ys[i], label=label, marker='.')
+                plt.show()
 
-        if functions and xs:
-            min_x = min(np.min(x_arr) for x_arr in xs)
-            max_x = max(np.max(x_arr) for x_arr in xs)
-            x_range = np.linspace(min_x, max_x, 1000)
-            
-            for i, func in enumerate(functions):
-                param_names = function_params[i].keys() if function_params and i < len(function_params) else []
-                param_values = list(function_params[i].values()) if function_params and i < len(function_params) else []
-                
-                # Używamy wyciągniętej funkcji z math_utils.py
-                model_func = create_model_function(func, param_names)
-                
-                y_model = np.array([model_func(x, *param_values) for x in x_range])
-                plt.plot(x_range, y_model, label=f"Model {i+1}", linestyle='-')
-
-        plt.title(title)
-        plt.xlabel(xlabel)
-        plt.ylabel(ylabel)
-        if do_legend:
-            plt.legend()
-        plt.grid()
-        
-        if filename:
-            plt.savefig(filename, format='png')
-            plt.close()
-        else:
-            plt.show()
-
-    def fft_peaks(self, x_col, y_col, peak_height_ratio=0.01, plot=True):
+    def fft_peaks(self, x_col, y_col, peak_height_ratio=0.01, plot=True, fontsize=None):
         """
         Computes FFT and finds frequency peaks.
         
@@ -118,6 +141,7 @@ class PlottingMixin:
             y_col (int): Signal column (1-indexed).
             peak_height_ratio (float): Minimum peak height relative to max peak.
             plot (bool): Whether to plot the spectrum.
+            fontsize (int, optional): Base font size for the plot.
         """
         if self.data is None:
             raise ValueError("No data available.")
@@ -141,15 +165,27 @@ class PlottingMixin:
         peaks, _ = find_peaks(amplituda, height=np.max(amplituda) * peak_height_ratio)
 
         if plot:
-            plt.figure(figsize=(8, 4))
-            plt.plot(czestotliwosc, amplituda, label="FFT Spectrum")
-            plt.plot(czestotliwosc[peaks], amplituda[peaks], "rx", label="Peaks")
-            plt.xlabel("Frequency [Hz]")
-            plt.ylabel("Amplitude")
-            plt.title("Amplitude Spectrum (FFT)")
-            plt.legend()
-            plt.grid()
-            plt.show()
+            rc_params = {}
+            if fontsize is not None:
+                rc_params = {
+                    'font.size': fontsize,
+                    'axes.titlesize': fontsize + 2,
+                    'axes.labelsize': fontsize,
+                    'xtick.labelsize': fontsize - 1,
+                    'ytick.labelsize': fontsize - 1,
+                    'legend.fontsize': fontsize - 1
+                }
+
+            with plt.rc_context(rc_params):
+                plt.figure(figsize=(8, 4))
+                plt.plot(czestotliwosc, amplituda, label="FFT Spectrum")
+                plt.plot(czestotliwosc[peaks], amplituda[peaks], "rx", label="Peaks")
+                plt.xlabel("Frequency [Hz]")
+                plt.ylabel("Amplitude")
+                plt.title("Amplitude Spectrum (FFT)")
+                plt.legend()
+                plt.grid()
+                plt.show()
 
         return czestotliwosc[peaks], amplituda[peaks]
 
