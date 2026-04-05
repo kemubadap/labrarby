@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from cycler import cycler
 from scipy.signal import find_peaks
 from .math_utils import create_model_function
 from .base import BaseDataSet
@@ -10,7 +11,7 @@ class PlottingMixin:
     Expects self.data to be a numpy array.
     """
 
-    def plot_data(self, cols, meta=None, functions=None, function_params=None, do_legend=True, multiple_x_axis=False, uncertainties_columns=None, fontsize=None):
+    def plot_data(self, cols, meta=None, functions=None, function_params=None, do_legend=True, multiple_x_axis=False, uncertainties_columns=None, fontsize=None, Colorblind_mode=False):
         """
         Plots the data and optionally overlays mathematical models.
         
@@ -23,6 +24,7 @@ class PlottingMixin:
             multiple_x_axis (bool, optional): Treat cols as {x_col: y_col} mapping.
             uncertainties_columns (dict, optional): Mapping for error bars.
             fontsize (int, optional): Base font size for all plot elements.
+            Colorblind_mode (bool, optional): If True, uses the Okabe-Ito colorblind-friendly palette.
         """
         if not isinstance(self.data, np.ndarray):
             raise TypeError("self.data must be a numpy array.")
@@ -82,17 +84,22 @@ class PlottingMixin:
         else:
             filename, title, xlabel, ylabel = None, "Plot", "X Axis", "Y Axis"
 
-        # Konfiguracja relatywnych rozmiarów czcionek
+        # Konfiguracja parametrów wykresu
         rc_params = {}
         if fontsize is not None:
-            rc_params = {
+            rc_params.update({
                 'font.size': fontsize,
-                'axes.titlesize': fontsize + 2,    # Tytuł odrobinę większy
-                'axes.labelsize': fontsize,        # Etykiety osi w rozmiarze bazowym
-                'xtick.labelsize': fontsize - 1,   # Podziałki minimalnie mniejsze
+                'axes.titlesize': fontsize + 2,
+                'axes.labelsize': fontsize,
+                'xtick.labelsize': fontsize - 1,
                 'ytick.labelsize': fontsize - 1,
-                'legend.fontsize': fontsize - 1    # Legenda minimalnie mniejsza
-            }
+                'legend.fontsize': fontsize - 1
+            })
+
+        if Colorblind_mode:
+            # Paleta Okabe-Ito
+            cb_palette = ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7', '#000000']
+            rc_params['axes.prop_cycle'] = cycler(color=cb_palette)
 
         # Używamy menedżera kontekstu, by nie nadpisać globalnych ustawień matplotlib
         with plt.rc_context(rc_params):
@@ -132,7 +139,7 @@ class PlottingMixin:
             else:
                 plt.show()
 
-    def fft_peaks(self, x_col, y_col, peak_height_ratio=0.01, plot=True, fontsize=None):
+    def fft_peaks(self, x_col, y_col, peak_height_ratio=0.01, plot=True, fontsize=None, Colorblind_mode=False):
         """
         Computes FFT and finds frequency peaks.
         
@@ -142,6 +149,7 @@ class PlottingMixin:
             peak_height_ratio (float): Minimum peak height relative to max peak.
             plot (bool): Whether to plot the spectrum.
             fontsize (int, optional): Base font size for the plot.
+            Colorblind_mode (bool, optional): If True, uses colorblind-friendly colors.
         """
         if self.data is None:
             raise ValueError("No data available.")
@@ -167,19 +175,28 @@ class PlottingMixin:
         if plot:
             rc_params = {}
             if fontsize is not None:
-                rc_params = {
+                rc_params.update({
                     'font.size': fontsize,
                     'axes.titlesize': fontsize + 2,
                     'axes.labelsize': fontsize,
                     'xtick.labelsize': fontsize - 1,
                     'ytick.labelsize': fontsize - 1,
                     'legend.fontsize': fontsize - 1
-                }
+                })
+
+            if Colorblind_mode:
+                cb_palette = ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7', '#000000']
+                rc_params['axes.prop_cycle'] = cycler(color=cb_palette)
 
             with plt.rc_context(rc_params):
                 plt.figure(figsize=(8, 4))
                 plt.plot(czestotliwosc, amplituda, label="FFT Spectrum")
-                plt.plot(czestotliwosc[peaks], amplituda[peaks], "rx", label="Peaks")
+                
+                # Używamy drugiego koloru z cyklu (jeśli Colorblind_mode jest włączony) 
+                # lub po prostu czerwonego 'x' dla standardowego trybu, aby krzyżyki się wyróżniały.
+                peak_color = '#56B4E9' if Colorblind_mode else 'r'
+                plt.plot(czestotliwosc[peaks], amplituda[peaks], marker="x", color=peak_color, linestyle="None", label="Peaks")
+                
                 plt.xlabel("Frequency [Hz]")
                 plt.ylabel("Amplitude")
                 plt.title("Amplitude Spectrum (FFT)")
