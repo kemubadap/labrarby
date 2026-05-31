@@ -11,7 +11,7 @@ class PlottingMixin:
     Expects self.data to be a numpy array.
     """
 
-    def plot_data(self, cols, meta=None, functions=None, function_params=None, do_legend=True, multiple_x_axis=False, uncertainties_columns=None, fontsize=None, Colorblind_mode=False):
+    def plot_data(self, cols, meta=None, functions=None, function_params=None, do_legend=True, multiple_x_axis=False, uncertainties_columns=None, fontsize=None, Colorblind_mode=False, plot_style='scatter'):
         """
         Plots the data and optionally overlays mathematical models.
         
@@ -25,6 +25,7 @@ class PlottingMixin:
             uncertainties_columns (dict, optional): Mapping for error bars.
             fontsize (int, optional): Base font size for all plot elements.
             Colorblind_mode (bool, optional): If True, uses the Okabe-Ito colorblind-friendly palette.
+            plot_style (str, optional): Style of the plot. Options: 'scatter' (default), 'line', 'both'.
         """
         if not isinstance(self.data, np.ndarray):
             raise TypeError("self.data must be a numpy array.")
@@ -107,10 +108,27 @@ class PlottingMixin:
             
             for i in range(len(ys)):
                 label = f"Series {i+1}"
+                
+                # Ustalenie formatowania na podstawie wybranego stylu
+                if plot_style == 'line':
+                    fmt = '-'
+                    marker = None
+                    linestyle = '-'
+                elif plot_style == 'both':
+                    fmt = '.-'
+                    marker = '.'
+                    linestyle = '-'
+                else: # domyślnie 'scatter'
+                    fmt = '.'
+                    marker = '.'
+                    linestyle = 'None'
+
                 if x_errs[i] is not None or y_errs[i] is not None:
-                    plt.errorbar(xs[i], ys[i], xerr=x_errs[i], yerr=y_errs[i], fmt='.', label=label, capsize=3)
+                    # Funkcja errorbar używa fmt do określenia stylu
+                    plt.errorbar(xs[i], ys[i], xerr=x_errs[i], yerr=y_errs[i], fmt=fmt, label=label, capsize=3)
                 else:
-                    plt.scatter(xs[i], ys[i], label=label, marker='.')
+                    # Zamiana scatter na plot daje pełną kontrolę nad liniami i punktami
+                    plt.plot(xs[i], ys[i], label=label, marker=marker, linestyle=linestyle)
 
             if functions and xs:
                 min_x = min(np.min(x_arr) for x_arr in xs)
