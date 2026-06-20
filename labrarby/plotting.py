@@ -11,7 +11,7 @@ class PlottingMixin:
     Expects self.data to be a numpy array.
     """
 
-    def plot_data(self, cols, meta=None, functions=None, function_params=None, do_legend=True, multiple_x_axis=False, uncertainties_columns=None, fontsize=None, Colorblind_mode=False, plot_style='scatter'):
+    def plot_data(self, cols, meta=None, functions=None, function_params=None, do_legend=True, multiple_x_axis=False, uncertainties_columns=None, fontsize=None, Colorblind_mode=False, plot_style='scatter', custom_legend=None):
         """
         Plots the data and optionally overlays mathematical models.
         
@@ -26,6 +26,7 @@ class PlottingMixin:
             fontsize (int, optional): Base font size for all plot elements.
             Colorblind_mode (bool, optional): If True, uses the Okabe-Ito colorblind-friendly palette.
             plot_style (str, optional): Style of the plot. Options: 'scatter' (default), 'line', 'both'.
+            custom_legend (list of str, optional): Custom names for the plotted data series.
         """
         if not isinstance(self.data, np.ndarray):
             raise TypeError("self.data must be a numpy array.")
@@ -85,6 +86,13 @@ class PlottingMixin:
         else:
             filename, title, xlabel, ylabel = None, "Plot", "X Axis", "Y Axis"
 
+        # Zabezpieczenie dla custom_legend przed samym narysowaniem
+        if do_legend and custom_legend is not None:
+            if not isinstance(custom_legend, list):
+                raise TypeError("Parameter custom_legend must be a list of strings.")
+            if len(custom_legend) != len(ys):
+                raise ValueError(f"ValueError: Provided {len(custom_legend)} legend labels, but there are {len(ys)} data series to plot.")
+
         # Konfiguracja parametrów wykresu
         rc_params = {}
         if fontsize is not None:
@@ -107,7 +115,8 @@ class PlottingMixin:
             plt.figure(figsize=(8, 6))
             
             for i in range(len(ys)):
-                label = f"Series {i+1}"
+                # Decyzja o etykiecie na podstawie custom_legend
+                label = custom_legend[i] if custom_legend is not None else f"Series {i+1}"
                 
                 # Ustalenie formatowania na podstawie wybranego stylu
                 if plot_style == 'line':
