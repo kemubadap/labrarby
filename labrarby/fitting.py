@@ -229,8 +229,8 @@ class FittingDataSet(BaseDataSet, FittingMixin):
     A DataSet class that includes fitting capabilities.
     """
     def __add__(self, other):
-        if isinstance(other, FittingDataSet) and self.data.shape[1] == other.data.shape[1]:
+        if isinstance(other, FittingDataSet) and self.data.shape[0] == other.data.shape[0]:
             combined_data = np.hstack((self.data, other.data))
             return FittingDataSet(combined_data)
         else:
-            raise TypeError("Can only add another FittingDataSet with the same number of columns.")
+            raise TypeError("Can only add another FittingDataSet with the same number of rows.")

@@ -238,8 +238,8 @@ class DataPlotter(BaseDataSet, PlottingMixin):
     A DataSet class that includes plotting capabilities.
     """
     def __add__(self, other):
-        if isinstance(other, DataPlotter) and self.data.shape[1] == other.data.shape[1]:
+        if isinstance(other, DataPlotter) and self.data.shape[0] == other.data.shape[0]:
             combined_data = np.hstack((self.data, other.data))
             return DataPlotter(combined_data)
         else:
-            raise TypeError("Can only add another DataPlotter with the same number of columns.")
+            raise TypeError("Can only add another DataPlotter with the same number of rows.")
