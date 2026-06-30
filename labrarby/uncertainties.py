@@ -151,4 +151,9 @@ class DataUncertainties(BaseDataSet, UncertaintiesMixin):
     """
     A DataSet class that includes uncertainty calculation capabilities.
     """
-    pass
+    def __add__(self, other):
+        if isinstance(other, DataUncertainties) and self.data.shape[1] == other.data.shape[1]:
+            combined_data = np.hstack((self.data, other.data))
+            return DataUncertainties(combined_data)
+        else:
+            raise TypeError("Can only add another DataUncertainties with the same number of columns.")

@@ -118,4 +118,9 @@ class DataManager(DataIOMixin, BaseDataSet):
     """
     A class that combines DataIOMixin with BaseDataSet for complete data management.
     """
-    pass
+    def __add__(self, other):
+        if isinstance(other, DataManager) and self.data.shape[1] == other.data.shape[1]:
+            combined_data = np.hstack((self.data, other.data))
+            return DataManager(combined_data)
+        else:
+            raise TypeError("Can only add another DataManager with the same number of columns.")
