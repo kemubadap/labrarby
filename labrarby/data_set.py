@@ -3,6 +3,7 @@ from .data_io import DataIOMixin
 from .fitting import FittingMixin
 from .uncertainties import UncertaintiesMixin
 from .plotting import PlottingMixin
+import numpy as np
 
 
 class DataSet(BaseDataSet, DataIOMixin, FittingMixin, UncertaintiesMixin, PlottingMixin):
