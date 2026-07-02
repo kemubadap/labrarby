@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider, RadioButtons
 from cycler import cycler
 from scipy.signal import find_peaks
 from .math_utils import create_model_function
@@ -86,14 +87,12 @@ class PlottingMixin:
         else:
             filename, title, xlabel, ylabel = None, "Plot", "X Axis", "Y Axis"
 
-        # Zabezpieczenie dla custom_legend przed samym narysowaniem
         if do_legend and custom_legend is not None:
             if not isinstance(custom_legend, list):
                 raise TypeError("Parameter custom_legend must be a list of strings.")
             if len(custom_legend) != len(ys):
                 raise ValueError(f"ValueError: Provided {len(custom_legend)} legend labels, but there are {len(ys)} data series to plot.")
 
-        # Konfiguracja parametrów wykresu
         rc_params = {}
         if fontsize is not None:
             rc_params.update({
@@ -106,19 +105,15 @@ class PlottingMixin:
             })
 
         if Colorblind_mode:
-            # Paleta Okabe-Ito
             cb_palette = ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7', '#000000']
             rc_params['axes.prop_cycle'] = cycler(color=cb_palette)
 
-        # Używamy menedżera kontekstu, by nie nadpisać globalnych ustawień matplotlib
         with plt.rc_context(rc_params):
             plt.figure(figsize=(8, 6))
             
             for i in range(len(ys)):
-                # Decyzja o etykiecie na podstawie custom_legend
                 label = custom_legend[i] if custom_legend is not None else f"Series {i+1}"
                 
-                # Ustalenie formatowania na podstawie wybranego stylu
                 if plot_style == 'line':
                     fmt = '-'
                     marker = None
@@ -127,16 +122,14 @@ class PlottingMixin:
                     fmt = '.-'
                     marker = '.'
                     linestyle = '-'
-                else: # domyślnie 'scatter'
+                else: 
                     fmt = '.'
                     marker = '.'
                     linestyle = 'None'
 
                 if x_errs[i] is not None or y_errs[i] is not None:
-                    # Funkcja errorbar używa fmt do określenia stylu
                     plt.errorbar(xs[i], ys[i], xerr=x_errs[i], yerr=y_errs[i], fmt=fmt, label=label, capsize=3)
                 else:
-                    # Zamiana scatter na plot daje pełną kontrolę nad liniami i punktami
                     plt.plot(xs[i], ys[i], label=label, marker=marker, linestyle=linestyle)
 
             if functions and xs:
@@ -167,17 +160,6 @@ class PlottingMixin:
                 plt.show()
 
     def fft_peaks(self, x_col, y_col, peak_height_ratio=0.01, plot=True, fontsize=None, Colorblind_mode=False):
-        """
-        Computes FFT and finds frequency peaks.
-        
-        Args:
-            x_col (int): Time column (1-indexed).
-            y_col (int): Signal column (1-indexed).
-            peak_height_ratio (float): Minimum peak height relative to max peak.
-            plot (bool): Whether to plot the spectrum.
-            fontsize (int, optional): Base font size for the plot.
-            Colorblind_mode (bool, optional): If True, uses colorblind-friendly colors.
-        """
         if self.data is None:
             raise ValueError("No data available.")
 
@@ -219,8 +201,6 @@ class PlottingMixin:
                 plt.figure(figsize=(8, 4))
                 plt.plot(czestotliwosc, amplituda, label="FFT Spectrum")
                 
-                # Używamy drugiego koloru z cyklu (jeśli Colorblind_mode jest włączony) 
-                # lub po prostu czerwonego 'x' dla standardowego trybu, aby krzyżyki się wyróżniały.
                 peak_color = '#56B4E9' if Colorblind_mode else 'r'
                 plt.plot(czestotliwosc[peaks], amplituda[peaks], marker="x", color=peak_color, linestyle="None", label="Peaks")
                 
@@ -243,3 +223,152 @@ class DataPlotter(BaseDataSet, PlottingMixin):
             return DataPlotter(combined_data)
         else:
             raise TypeError("Can only add another DataPlotter with the same number of rows.")
+
+
+class SpectralMapPlotter:
+    """
+    A standalone class for interactive visualization of Z-path spectral maps.
+    """
+    def __init__(self, filename_or_data, nx, ny, skiprows=1):
+        """
+        Args:
+            filename_or_data (str or np.ndarray): Source data. First column must be wavelengths.
+            nx (int): Number of horizontal pixels in the map.
+            ny (int): Number of vertical pixels in the map.
+            skiprows (int): Number of header rows to skip if reading from a file.
+        """
+        self.nx = nx
+        self.ny = ny
+        
+        if isinstance(filename_or_data, str):
+            self.filename = filename_or_data
+            try:
+                self.data = np.loadtxt(filename_or_data, skiprows=skiprows)
+            except Exception as e:
+                raise FileNotFoundError(f"Error loading file '{filename_or_data}': {e}")
+        elif isinstance(filename_or_data, np.ndarray):
+            self.filename = None
+            self.data = filename_or_data
+        else:
+            raise TypeError("Expected filename (str) or numpy array.")
+            
+        self.wavelengths = self.data[:, 0]
+        self.spectra = self.data[:, 1:]
+        
+        # Weryfikacja poprawności wymiarów mapy
+        expected_pixels = self.nx * self.ny
+        actual_pixels = self.spectra.shape[1]
+        
+        if expected_pixels != actual_pixels:
+            raise ValueError(f"Shape mismatch: Zadeklarowano {expected_pixels} pikseli (NX={self.nx} * NY={self.ny}), ale dane zawierają kolumny dla {actual_pixels} pikseli.")
+            
+        # Reshape do postaci [fale, y, x]
+        self.map_data = self.spectra.reshape(len(self.wavelengths), self.ny, self.nx)
+
+    def show_interactive_map(self):
+        """
+        Launches the interactive Matplotlib window to browse the spectral map.
+        """
+        fig = plt.figure(figsize=(13, 7))
+
+        # Definicje obszarów (grid)
+        ax_map = fig.add_axes([0.08, 0.20, 0.55, 0.70])      
+        ax_cb = fig.add_axes([0.64, 0.20, 0.02, 0.70])       
+        ax_spec = fig.add_axes([0.08, 0.20, 0.55, 0.70])     
+        ax_indicator = fig.add_axes([0.75, 0.20, 0.2, 0.35]) 
+        ax_radio = fig.add_axes([0.75, 0.70, 0.2, 0.15])     
+
+        ax_slider_wave = fig.add_axes([0.08, 0.08, 0.55, 0.03])
+        ax_slider_pixel = fig.add_axes([0.08, 0.08, 0.55, 0.03])
+
+        # --- KONFIGURACJA TRYBU 1: MAPA ---
+        initial_wave_idx = 0
+        im_map = ax_map.imshow(self.map_data[initial_wave_idx], cmap='viridis', aspect='equal')
+        cb_map = fig.colorbar(im_map, cax=ax_cb)
+        cb_map.set_label('Liczba zliczeń', fontsize=11)
+        ax_map.set_title(f"Mapa intensywności. Długość fali: {self.wavelengths[initial_wave_idx]:.2f} nm", fontsize=14)
+
+        # Zapisujemy widgety jako atrybuty instancji!
+        self._slider_wave = Slider(ax_slider_wave, 'Krok Fali', 0, len(self.wavelengths)-1, valinit=initial_wave_idx, valstep=1)
+
+        # --- KONFIGURACJA TRYBU 2: WIDMO I MINIMAPA ---
+        initial_pixel = 0
+        y_init, x_init = divmod(initial_pixel, self.nx)
+
+        line_spec, = ax_spec.plot(self.wavelengths, self.spectra[:, initial_pixel], color='blue', lw=1.5)
+        ax_spec.set_xlim(self.wavelengths.min(), self.wavelengths.max())
+        ax_spec.set_xlabel('Długość fali [nm]', fontsize=11)
+        ax_spec.set_ylabel('Liczba zliczeń', fontsize=11)
+        ax_spec.grid(True, linestyle='--', alpha=0.7)
+        ax_spec.set_title(f"Widmo dla piksela nr {initial_pixel} (Współrzędne mapy: X={x_init}, Y={y_init})", fontsize=14)
+
+        ax_indicator.set_xlim(-0.5, self.nx - 0.5)
+        ax_indicator.set_ylim(self.ny - 0.5, -0.5) 
+        ax_indicator.set_aspect('equal')
+        ax_indicator.set_title("Pozycja badanego piksela")
+        ax_indicator.set_xticks([])
+        ax_indicator.set_yticks([])
+
+        rect = plt.Rectangle((-0.5, -0.5), self.nx, self.ny, fill=False, color='black', lw=1.5)
+        ax_indicator.add_patch(rect)
+        point_ind, = ax_indicator.plot([x_init], [y_init], 'ro', markersize=8)
+
+        self._slider_pixel = Slider(ax_slider_pixel, 'Nr Piksela', 0, self.ny*self.nx - 1, valinit=initial_pixel, valstep=1)
+
+        # --- PRZYCISKI I LOGIKA PRZEŁĄCZANIA ---
+        self._radio = RadioButtons(ax_radio, ('Tryb Mapy (Fala)', 'Tryb Widma (Piksel)'))
+
+        def switch_mode(label):
+            if label == 'Tryb Mapy (Fala)':
+                ax_map.set_visible(True)
+                ax_cb.set_visible(True)
+                ax_slider_wave.set_visible(True)
+                self._slider_wave.active = True
+                
+                ax_spec.set_visible(False)
+                ax_indicator.set_visible(False)
+                ax_slider_pixel.set_visible(False)
+                self._slider_pixel.active = False
+            else:
+                ax_spec.set_visible(True)
+                ax_indicator.set_visible(True)
+                ax_slider_pixel.set_visible(True)
+                self._slider_pixel.active = True
+                
+                ax_map.set_visible(False)
+                ax_cb.set_visible(False)
+                ax_slider_wave.set_visible(False)
+                self._slider_wave.active = False
+                
+            fig.canvas.draw_idle()
+
+        self._radio.on_clicked(switch_mode)
+
+        def update_wave(val):
+            idx = int(self._slider_wave.val)
+            im_map.set_data(self.map_data[idx])
+            im_map.set_clim(vmin=self.map_data[idx].min(), vmax=self.map_data[idx].max())
+            ax_map.set_title(f"Mapa intensywności. Długość fali: {self.wavelengths[idx]:.2f} nm", fontsize=14)
+            fig.canvas.draw_idle()
+
+        def update_pixel(val):
+            idx = int(self._slider_pixel.val)
+            y, x = divmod(idx, self.nx)
+            
+            current_spec = self.spectra[:, idx]
+            line_spec.set_ydata(current_spec)
+            
+            margin = (current_spec.max() - current_spec.min()) * 0.05
+            if margin == 0: margin = 1
+            ax_spec.set_ylim(current_spec.min() - margin, current_spec.max() + margin)
+            ax_spec.set_title(f"Widmo dla piksela nr {idx} (Współrzędne mapy: X={x}, Y={y})", fontsize=14)
+            
+            point_ind.set_data([x], [y])
+            fig.canvas.draw_idle()
+
+        self._slider_wave.on_changed(update_wave)
+        self._slider_pixel.on_changed(update_pixel)
+
+        # Inicjalizacja domyślnego trybu
+        switch_mode('Tryb Mapy (Fala)')
+        plt.show()
