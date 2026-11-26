@@ -344,6 +344,21 @@ class SpectralMapPlotter:
                 return arr["val"].copy()
         return None
 
+    @staticmethod
+    def _read_origin_coords(tail: bytes) -> tuple[float, float, float] | None:
+        """Read DataOriginValue0 (X), DataOriginValue1 (Y), and optional DataOriginValue2 (Z) from a DataList tail."""
+        vals = []
+        for k in range(3):
+            key = f"DataOriginValue{k}".encode("utf-16le") + b"\x00\x00\x05\x00"
+            idx = tail.find(key)
+            if idx == -1 or idx + len(key) + 8 > len(tail):
+                if k < 2:
+                    return None  # Brak X lub Y
+                vals.append(0.0)  # Mapa 2D (brak Z)
+            else:
+                vals.append(struct.unpack_from("<d", tail, idx + len(key))[0])
+        return vals[0], vals[1], vals[2]
+
     def _init_from_wxd(self, filepath: str):
         blocks = self._extract_zlib_blocks(Path(filepath).read_bytes())
 
@@ -352,6 +367,7 @@ class SpectralMapPlotter:
         if not direct_arrays or not datalist_blocks:
             raise ValueError(f"Could not find spectral map data in '{filepath}'.")
 
+        # Dopasuj oś spektralną (długość fali)
         spectral_axis = None
         for arr in reversed(direct_arrays):
             if self._read_embedded_vt_r8(datalist_blocks[0], len(arr)) is not None:
@@ -361,34 +377,29 @@ class SpectralMapPlotter:
             raise ValueError("Could not match spectral axis to DataList blocks.")
 
         spec_len = len(spectral_axis)
-        spectra = [y for b in datalist_blocks if (y := self._read_embedded_vt_r8(b, spec_len)) is not None]
+        marker = struct.pack("<Q", spec_len) + b"\x05\x00"
 
-        coord_candidates = [a for a in direct_arrays if len(a) != spec_len]
-        if not coord_candidates:
-            raise ValueError("This .wxd file appears to be a single spectrum, not a map.")
+        # Wyciągnij (X, Y, Z) i widmo bezpośrednio z każdego bloku DataList
+        points = []
+        for b in datalist_blocks:
+            idx = b.find(marker)
+            if idx == -1 or len(b) < idx + 8 + spec_len * 10:
+                continue
+            arr = np.frombuffer(b, dtype=VT_R8_DTYPE, count=spec_len, offset=idx + 8)
+            if not np.all(arr["tag"] == 5):
+                continue
 
-        n_points = max(
-            {len(a) for a in coord_candidates},
-            key=lambda L: sum(len(a) == L for a in coord_candidates),
-        )
-        coords = [a for a in coord_candidates if len(a) == n_points]
+            tail = b[idx + 8 + spec_len * 10 :]
+            coords = self._read_origin_coords(tail)
+            if coords is not None:
+                points.append((coords[0], coords[1], coords[2], arr["val"].copy()))
 
-        # Usuwamy duplikaty tablic współrzędnych (snapshoty Metakit)
-        unique_coords = []
-        for c in coords:
-            if not any(np.allclose(c, u, equal_nan=True) for u in unique_coords):
-                unique_coords.append(c)
+        if not points:
+            raise ValueError("This .wxd file does not contain map coordinates (DataOriginValue).")
 
-        if len(unique_coords) > 3:
-            unique_coords = unique_coords[-3:]
-
-        if len(spectra) < n_points:
-            raise ValueError(f"Found only {len(spectra)} spectra for {n_points} map coordinates.")
-        spectra = spectra[:n_points]
-
-        x_c = np.round(unique_coords[0], 6)
-        y_c = np.round(unique_coords[1], 6) if len(unique_coords) >= 2 else np.zeros(n_points)
-        z_c = np.round(unique_coords[2], 6) if len(unique_coords) == 3 else np.zeros(n_points)
+        x_c = np.round([p[0] for p in points], 6)
+        y_c = np.round([p[1] for p in points], 6)
+        z_c = np.round([p[2] for p in points], 6)
 
         self.x_values = np.unique(x_c)
         self.y_values = np.unique(y_c)
@@ -404,8 +415,8 @@ class SpectralMapPlotter:
         z_idx = np.searchsorted(self.z_values, z_c)
 
         self.volume_data = np.full((self.nz, spec_len, self.ny, self.nx), np.nan, dtype=np.float64)
-        for i in range(n_points):
-            self.volume_data[z_idx[i], :, y_idx[i], x_idx[i]] = spectra[i]
+        for i, (_, _, _, spec) in enumerate(points):
+            self.volume_data[z_idx[i], :, y_idx[i], x_idx[i]] = spec
 
         self.map_data = self.volume_data[0]
         self.spectra = self.map_data.reshape(spec_len, self.ny * self.nx)
