@@ -7,9 +7,13 @@ env/
 __pycache__/
 *.py[cod]
 *$py.class
+build/
+*.egg-info/
+dist/
 
 # example data files
 *.txt
 *.csv
 *.dat
 *.png
+
